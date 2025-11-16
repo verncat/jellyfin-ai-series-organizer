@@ -222,14 +222,14 @@ def apply():
                             'new_name': dest_file.name
                         })
                         
-                        # Create hard link (preserves original file and permissions)
+                        # Create symbolic link (works across filesystems)
                         try:
-                            os.link(str(file_to_move), str(dest_file))
+                            os.symlink(str(file_to_move.resolve()), str(dest_file))
                             moved_files += 1
-                            logger.info(f"Hard link created successfully")
+                            logger.info(f"Symbolic link created successfully")
                         except OSError as e:
-                            logger.error(f"Failed to create hard link, falling back to copy: {e}")
-                            # Fallback to copy if hard link fails (e.g., cross-filesystem)
+                            logger.error(f"Failed to create symbolic link, falling back to copy: {e}")
+                            # Fallback to copy if symlink fails (e.g., no permissions on Windows)
                             shutil.copy2(str(file_to_move), str(dest_file))
                             moved_files += 1
                         
@@ -248,14 +248,14 @@ def apply():
                             'new_name': related_dest.name
                         })
                         
-                        # Create hard link (preserves original file and permissions)
+                        # Create symbolic link (works across filesystems)
                         try:
-                            os.link(str(file_to_move), str(related_dest))
+                            os.symlink(str(file_to_move.resolve()), str(related_dest))
                             moved_files += 1
-                            logger.info(f"Hard link created successfully")
+                            logger.info(f"Symbolic link created successfully")
                         except OSError as e:
-                            logger.error(f"Failed to create hard link, falling back to copy: {e}")
-                            # Fallback to copy if hard link fails
+                            logger.error(f"Failed to create symbolic link, falling back to copy: {e}")
+                            # Fallback to copy if symlink fails
                             shutil.copy2(str(file_to_move), str(related_dest))
                             moved_files += 1
                         
