@@ -153,7 +153,11 @@
                                 </div>
                                 <div class="flex items-start">
                                     <span class="material-icons text-xs mr-1 mt-0.5">insert_drive_file</span>
-                                    <span>{{ folder.applied.file_count }} files moved</span>
+                                    <span>{{ folder.applied.file_count }} files linked</span>
+                                </div>
+                                <div class="flex items-start">
+                                    <span class="material-icons text-xs mr-1 mt-0.5">info</span>
+                                    <span class="text-xs">Original files preserved</span>
                                 </div>
                             </div>
                         </div>
@@ -461,7 +465,7 @@
         }
         
         async function revertFolder(folderName) {
-            if (!confirm(`Вы уверены что хотите откатить изменения для папки "${folderName}"?\n\nВсе файлы будут возвращены на исходные места.`)) {
+            if (!confirm(`Вы уверены что хотите удалить ссылки для папки "${folderName}"?\n\nОригинальные файлы останутся в tv_unordered.`)) {
                 return;
             }
             
@@ -477,14 +481,14 @@
                 const result = await response.json();
                 
                 if (response.ok) {
-                    alert(`✅ Успешно откачено ${result.files_reverted} файлов!`);
+                    alert(`✅ Успешно удалено ${result.files_reverted} ссылок!\n\nОригинальные файлы сохранены в tv_unordered.`);
                     location.reload();
                 } else {
                     alert(`❌ Ошибка: ${result.error}`);
                 }
             } catch (error) {
                 console.error('Revert error:', error);
-                alert('❌ Ошибка при откате изменений');
+                alert('❌ Ошибка при удалении ссылок');
             }
         }
         

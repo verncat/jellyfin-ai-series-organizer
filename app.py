@@ -207,12 +207,12 @@ def apply():
                 related_files = list(source_parent.glob(f"{escaped_stem}.*"))
                 logger.info(f"Found {len(related_files)} files to move for {source_stem}")
                 
-                # Move all files (main + related)
+                # Create hard links for all files (main + related)
                 for file_to_move in related_files:
-                    logger.info(f"Moving file: {file_to_move}")
+                    logger.info(f"Creating link for file: {file_to_move}")
                     if file_to_move == source_file:
-                        # Move main video file
-                        logger.info(f"Moving main file: {file_to_move} -> {dest_file}")
+                        # Create hard link for main video file
+                        logger.info(f"Creating hard link: {file_to_move} -> {dest_file}")
                         
                         # Record mapping
                         all_file_mappings.append({
@@ -222,14 +222,23 @@ def apply():
                             'new_name': dest_file.name
                         })
                         
-                        shutil.move(str(file_to_move), str(dest_file))
-                        moved_files += 1
+                        # Create hard link (preserves original file and permissions)
+                        try:
+                            os.link(str(file_to_move), str(dest_file))
+                            moved_files += 1
+                            logger.info(f"Hard link created successfully")
+                        except OSError as e:
+                            logger.error(f"Failed to create hard link, falling back to copy: {e}")
+                            # Fallback to copy if hard link fails (e.g., cross-filesystem)
+                            shutil.copy2(str(file_to_move), str(dest_file))
+                            moved_files += 1
+                        
                         yield f"data: {json.dumps({'type': 'progress', 'current': moved_files, 'total': total_files, 'filename': ep['new_filename']})}\n\n"
                     else:
-                        # Move related file (keep same extension)
+                        # Create hard link for related file (keep same extension)
                         extension = file_to_move.suffix
                         related_dest = season_folder / f"{dest_stem}{extension}"
-                        logger.info(f"Moving related file: {file_to_move} -> {related_dest}")
+                        logger.info(f"Creating hard link for related file: {file_to_move} -> {related_dest}")
                         
                         # Record mapping
                         all_file_mappings.append({
@@ -239,8 +248,17 @@ def apply():
                             'new_name': related_dest.name
                         })
                         
-                        shutil.move(str(file_to_move), str(related_dest))
-                        moved_files += 1
+                        # Create hard link (preserves original file and permissions)
+                        try:
+                            os.link(str(file_to_move), str(related_dest))
+                            moved_files += 1
+                            logger.info(f"Hard link created successfully")
+                        except OSError as e:
+                            logger.error(f"Failed to create hard link, falling back to copy: {e}")
+                            # Fallback to copy if hard link fails
+                            shutil.copy2(str(file_to_move), str(related_dest))
+                            moved_files += 1
+                        
                         yield f"data: {json.dumps({'type': 'progress', 'current': moved_files, 'total': total_files, 'filename': related_dest.name})}\n\n"
             
             # Create .applied marker and mapping file in source folder
@@ -295,7 +313,7 @@ def cancel():
 
 @app.route('/revert', methods=['POST'])
 def revert():
-    """Revert organization by moving files back to original locations"""
+    """Revert organization by removing hard links (original files remain intact)"""
     try:
         data = request.json
         folder_name = data.get('folder')
@@ -313,30 +331,26 @@ def revert():
         mapping_data = json.loads(mapping_file.read_text())
         file_mappings = mapping_data.get('file_mappings', [])
         
-        logger.info(f"Reverting {len(file_mappings)} files for folder: {folder_name}")
+        logger.info(f"Reverting {len(file_mappings)} links for folder: {folder_name}")
         
         files_reverted = 0
         errors = []
         
-        # Move files back
+        # Remove hard links (original files stay in tv_unordered)
         for mapping in file_mappings:
             try:
                 new_path = Path(mapping['new_path'])
-                old_path = Path(mapping['old_path'])
                 
                 if new_path.exists():
-                    # Ensure parent directory exists
-                    old_path.parent.mkdir(parents=True, exist_ok=True)
-                    
-                    # Move file back
-                    shutil.move(str(new_path), str(old_path))
+                    # Simply delete the link - original file remains
+                    new_path.unlink()
                     files_reverted += 1
-                    logger.info(f"Reverted: {new_path} -> {old_path}")
+                    logger.info(f"Removed link: {new_path}")
                 else:
-                    logger.warning(f"File not found for revert: {new_path}")
+                    logger.warning(f"Link not found for revert: {new_path}")
                     
             except Exception as e:
-                error_msg = f"Error reverting {mapping['new_name']}: {str(e)}"
+                error_msg = f"Error removing link {mapping['new_name']}: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
         
