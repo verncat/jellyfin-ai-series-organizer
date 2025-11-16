@@ -27,6 +27,27 @@ TV_UNORDERED = WORKSPACE / "tv_unordered"
 TV = WORKSPACE / "tv"
 
 
+def copy_with_metadata(src, dst):
+    """Copy file preserving all metadata including owner and permissions"""
+    # First copy the file content and basic metadata
+    shutil.copy2(str(src), str(dst))
+    
+    # Try to preserve ownership (Unix/Linux only)
+    try:
+        src_stat = os.stat(str(src))
+        os.chown(str(dst), src_stat.st_uid, src_stat.st_gid)
+        logger.info(f"Preserved ownership: UID={src_stat.st_uid}, GID={src_stat.st_gid}")
+    except (AttributeError, OSError, PermissionError) as e:
+        # os.chown not available on Windows or no permissions
+        logger.debug(f"Could not preserve ownership (this is normal on Windows): {e}")
+    
+    # Ensure permissions are copied (redundant with copy2 but explicit)
+    try:
+        shutil.copystat(str(src), str(dst))
+    except Exception as e:
+        logger.warning(f"Could not copy all stat info: {e}")
+
+
 @app.route('/')
 def index():
     """Main page - list all folders in tv_unordered"""
@@ -121,7 +142,7 @@ def analyze():
 
 
 @app.route('/apply', methods=['GET'])
-def apply():
+def apply_organization():
     """Apply the organization with progress tracking"""
     
     # Get structure from session
@@ -131,15 +152,16 @@ def apply():
     if not structure or not source_folder:
         return jsonify({'error': 'No pending organization'}), 400
     
+    # Get method from query parameter (default to symlink)
+    method = request.args.get('method', 'symlink')
+    
     def generate():
         """Generator for streaming progress"""
         try:
             logger.info("=== Starting apply_organization ===")
             logger.info(f"Source folder: {source_folder}")
+            logger.info(f"Organization method: {method}")
             logger.info(f"Structure: {json.dumps(structure, indent=2)}")
-            
-            from pathlib import Path
-            import shutil
             
             series_name = structure['series_name']
             year = structure['year']
@@ -222,23 +244,27 @@ def apply():
                             'new_name': dest_file.name
                         })
                         
-                        # Create symbolic link (works across filesystems)
-                        try:
-                            os.symlink(str(file_to_move.resolve()), str(dest_file))
+                        # Create link or copy based on selected method
+                        if method == 'symlink':
+                            try:
+                                os.symlink(str(file_to_move.resolve()), str(dest_file))
+                                moved_files += 1
+                                logger.info("Symbolic link created successfully")
+                            except OSError as e:
+                                logger.error(f"Failed to create symbolic link, falling back to copy: {e}")
+                                copy_with_metadata(file_to_move, dest_file)
+                                moved_files += 1
+                        else:  # method == 'copy'
+                            copy_with_metadata(file_to_move, dest_file)
                             moved_files += 1
-                            logger.info(f"Symbolic link created successfully")
-                        except OSError as e:
-                            logger.error(f"Failed to create symbolic link, falling back to copy: {e}")
-                            # Fallback to copy if symlink fails (e.g., no permissions on Windows)
-                            shutil.copy2(str(file_to_move), str(dest_file))
-                            moved_files += 1
+                            logger.info("File copied successfully")
                         
                         yield f"data: {json.dumps({'type': 'progress', 'current': moved_files, 'total': total_files, 'filename': ep['new_filename']})}\n\n"
                     else:
-                        # Create hard link for related file (keep same extension)
+                        # Create link/copy for related file (keep same extension)
                         extension = file_to_move.suffix
                         related_dest = season_folder / f"{dest_stem}{extension}"
-                        logger.info(f"Creating hard link for related file: {file_to_move} -> {related_dest}")
+                        logger.info(f"Processing related file: {file_to_move} -> {related_dest}")
                         
                         # Record mapping
                         all_file_mappings.append({
@@ -248,16 +274,20 @@ def apply():
                             'new_name': related_dest.name
                         })
                         
-                        # Create symbolic link (works across filesystems)
-                        try:
-                            os.symlink(str(file_to_move.resolve()), str(related_dest))
+                        # Create link or copy based on selected method
+                        if method == 'symlink':
+                            try:
+                                os.symlink(str(file_to_move.resolve()), str(related_dest))
+                                moved_files += 1
+                                logger.info("Symbolic link created successfully")
+                            except OSError as e:
+                                logger.error(f"Failed to create symbolic link, falling back to copy: {e}")
+                                copy_with_metadata(file_to_move, related_dest)
+                                moved_files += 1
+                        else:  # method == 'copy'
+                            copy_with_metadata(file_to_move, related_dest)
                             moved_files += 1
-                            logger.info(f"Symbolic link created successfully")
-                        except OSError as e:
-                            logger.error(f"Failed to create symbolic link, falling back to copy: {e}")
-                            # Fallback to copy if symlink fails
-                            shutil.copy2(str(file_to_move), str(related_dest))
-                            moved_files += 1
+                            logger.info("File copied successfully")
                         
                         yield f"data: {json.dumps({'type': 'progress', 'current': moved_files, 'total': total_files, 'filename': related_dest.name})}\n\n"
             

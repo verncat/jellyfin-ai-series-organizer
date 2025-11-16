@@ -332,6 +332,41 @@
                     </div>
                 </div>
                 
+                <div class="mb-6">
+                    <h3 class="text-xs sm:text-sm font-medium text-gray-700 mb-2 sm:mb-3 flex items-center">
+                        <span class="material-icons text-sm sm:text-base mr-2 text-blue-600">settings</span>
+                        Organization Method
+                    </h3>
+                    <div class="bg-gray-50 rounded-lg p-4 space-y-3">
+                        <label class="flex items-start cursor-pointer group">
+                            <input type="radio" name="organizationMethod" value="symlink" checked class="mt-1 mr-3 w-4 h-4 text-primary-600">
+                            <div class="flex-1">
+                                <div class="font-medium text-gray-900 group-hover:text-primary-600 transition flex items-center">
+                                    <span class="material-icons text-sm mr-1">link</span>
+                                    Symbolic Links (Recommended)
+                                </div>
+                                <div class="text-xs text-gray-600 mt-1">
+                                    Creates links to original files. Saves disk space, works across filesystems. 
+                                    <span class="text-amber-600">⚠️ Originals must not be deleted.</span>
+                                </div>
+                            </div>
+                        </label>
+                        
+                        <label class="flex items-start cursor-pointer group">
+                            <input type="radio" name="organizationMethod" value="copy" class="mt-1 mr-3 w-4 h-4 text-primary-600">
+                            <div class="flex-1">
+                                <div class="font-medium text-gray-900 group-hover:text-primary-600 transition flex items-center">
+                                    <span class="material-icons text-sm mr-1">content_copy</span>
+                                    Copy Files
+                                </div>
+                                <div class="text-xs text-gray-600 mt-1">
+                                    Creates independent copies. Uses more disk space but files are fully independent.
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                
                 <div class="flex flex-col sm:flex-row gap-2 sm:gap-3">
                     <button onclick="applyOrganization()" 
                             class="flex-1 bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white font-medium py-2.5 sm:py-3 px-4 rounded elevation-1 hover:elevation-2 transition flex items-center justify-center text-sm sm:text-base">
@@ -349,6 +384,9 @@
         
         async function applyOrganization() {
             const modalBody = document.getElementById('modalBody');
+            
+            // Get selected method
+            const selectedMethod = document.querySelector('input[name="organizationMethod"]:checked').value;
             
             modalBody.innerHTML = `
                 <div class="text-center py-12">
@@ -375,7 +413,7 @@
             `;
             
             try {
-                const eventSource = new EventSource('/apply');
+                const eventSource = new EventSource(`/apply?method=${selectedMethod}`);
                 
                 eventSource.onmessage = function(event) {
                     const data = JSON.parse(event.data);
