@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  tv-organizer:
+    build: .
+    container_name: tv-series-organizer
+    ports:
+      - "9002:9002"
+    volumes:
+      - ./tv:/app/tv
+      - ./tv_unordered:/app/tv_unordered
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+    restart: unless-stopped

@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TV Series Organizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'Roboto', sans-serif;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .spinner {
+            animation: spin 1s linear infinite;
+        }
+        .material-shadow {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.1);
+        }
+        .material-shadow-lg {
+            box-shadow: 0 8px 16px rgba(0,0,0,0.15), 0 16px 32px rgba(0,0,0,0.15);
+        }
+        .ripple {
+            position: relative;
+            overflow: hidden;
+        }
+        .elevation-1 { box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .elevation-2 { box-shadow: 0 4px 8px rgba(0,0,0,0.12); }
+        .elevation-3 { box-shadow: 0 8px 16px rgba(0,0,0,0.15); }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#E3F2FD',
+                            100: '#BBDEFB',
+                            200: '#90CAF9',
+                            300: '#64B5F6',
+                            400: '#42A5F5',
+                            500: '#2196F3',
+                            600: '#1E88E5',
+                            700: '#1976D2',
+                            800: '#1565C0',
+                            900: '#0D47A1',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- App Bar -->
+    <header class="bg-primary-700 text-white elevation-2 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex items-center">
+                <span class="material-icons text-3xl mr-3">tv</span>
+                <div>
+                    <h1 class="text-xl sm:text-2xl font-medium">TV Series Organizer</h1>
+                    <p class="text-sm text-primary-100 hidden sm:block">AI-powered media organization</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <!-- API Key Card -->
+        <div class="bg-white rounded-lg elevation-1 mb-6 overflow-hidden">
+            <div class="px-4 sm:px-6 py-4 border-l-4 border-primary-500">
+                <label for="apiKey" class="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                    <span class="material-icons text-sm mr-2">vpn_key</span>
+                    DeepSeek API Key
+                </label>
+                {% if has_api_key %}
+                    <input type="password" id="apiKey" 
+                           class="w-full px-4 py-3 border border-gray-300 rounded bg-gray-50 font-mono text-sm"
+                           value="configured" disabled>
+                    <div class="mt-3 flex items-center text-sm text-green-700">
+                        <span class="material-icons text-lg mr-2">check_circle</span>
+                        <span>API key configured via environment</span>
+                    </div>
+                {% else %}
+                    <input type="password" id="apiKey" 
+                           class="w-full px-4 py-3 border border-gray-300 rounded font-mono text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200 transition"
+                           placeholder="sk-...">
+                    <div class="mt-3 flex items-center text-sm text-amber-700">
+                        <span class="material-icons text-lg mr-2">info</span>
+                        <span>Enter your API key or set DEEPSEEK_API_KEY environment variable</span>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Folders Section -->
+        <div class="mb-4">
+            <h2 class="text-lg sm:text-xl font-medium text-gray-800 mb-4 flex items-center">
+                <span class="material-icons mr-2">folder</span>
+                Folders to Process
+            </h2>
+        </div>
+
+        {% if folders %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for folder in folders %}
+                <div class="bg-white rounded-lg elevation-1 hover:elevation-3 transition-all duration-300 overflow-hidden">
+                    <div class="p-4 sm:p-6">
+                        <div class="flex items-start mb-4">
+                            <span class="material-icons text-primary-500 mr-3 mt-1">folder_open</span>
+                            <h3 class="text-sm sm:text-base font-medium text-gray-900 break-words flex-1">{{ folder }}</h3>
+                        </div>
+                        <button onclick="analyzeFolder('{{ folder }}')" 
+                                class="w-full bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white font-medium py-3 px-4 rounded elevation-1 hover:elevation-2 transition-all duration-200 flex items-center justify-center ripple">
+                            <span class="material-icons text-sm mr-2">analytics</span>
+                            <span>Analyze</span>
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="bg-white rounded-lg elevation-1 py-16 sm:py-20 text-center">
+                <span class="material-icons text-6xl sm:text-7xl text-gray-300 mb-4">folder_off</span>
+                <h3 class="text-lg sm:text-xl font-medium text-gray-600 mb-2">No folders found</h3>
+                <p class="text-sm text-gray-500">Add folders to tv_unordered/ to get started</p>
+            </div>
+        {% endif %}
+    </main>
+
+    <!-- Modal Backdrop -->
+    <div id="previewModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto w-full">
+        <div class="flex items-start sm:items-center justify-center min-h-screen p-0 sm:p-4 lg:p-6 w-full">
+            <div class="bg-white w-full sm:rounded-lg sm:elevation-3 sm:max-w-5xl max-h-screen sm:max-h-[90vh] overflow-hidden flex flex-col">
+                <div class="overflow-y-auto p-4 sm:p-6 lg:p-8">
+                    <div id="modalBody"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const HAS_API_KEY = {{ 'true' if has_api_key else 'false' }};
+        
+        function getApiKey() {
+            const apiKeyInput = document.getElementById('apiKey');
+            if (apiKeyInput.disabled) {
+                return '';  // Use server-side env var
+            }
+            return apiKeyInput.value.trim();
+        }
+        
+        async function analyzeFolder(folderName) {
+            const apiKey = getApiKey();
+            
+            if (!apiKey && !HAS_API_KEY) {
+                alert('Please enter your DeepSeek API key');
+                return;
+            }
+            
+            const modal = document.getElementById('previewModal');
+            const modalBody = document.getElementById('modalBody');
+            
+            // Show loading
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            modalBody.innerHTML = `
+                <div class="text-center py-12">
+                    <div class="spinner border-4 border-primary-100 border-t-primary-600 rounded-full w-16 h-16 mx-auto mb-6"></div>
+                    <p class="text-gray-600">Analyzing with AI...</p>
+                </div>
+            `;
+            
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        folder: folderName,
+                        api_key: apiKey
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Analysis failed');
+                }
+                
+                // Show preview
+                showPreview(data);
+                
+            } catch (error) {
+                modalBody.innerHTML = `
+                    <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
+                        <div class="flex items-center">
+                            <span class="material-icons text-red-500 mr-3">error</span>
+                            <div>
+                                <p class="font-medium text-red-800">Error</p>
+                                <p class="text-sm text-red-700">${error.message}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="closeModal()" 
+                            class="w-full bg-gray-600 hover:bg-gray-700 text-white font-medium py-3 px-4 rounded elevation-1 transition">
+                        Close
+                    </button>
+                `;
+            }
+        }
+        
+        function showPreview(data) {
+            const modalBody = document.getElementById('modalBody');
+            
+            modalBody.innerHTML = `
+                <div class="mb-6">
+                    <h2 class="text-xl sm:text-2xl lg:text-3xl font-medium text-gray-900 mb-3">${escapeHtml(data.series_name)}</h2>
+                    <div class="flex flex-wrap gap-2 sm:gap-3 text-xs sm:text-sm">
+                        ${data.year ? `
+                        <div class="flex items-center bg-primary-50 text-primary-700 px-2 sm:px-3 py-1 rounded">
+                            <span class="material-icons text-xs sm:text-sm mr-1">calendar_today</span>
+                            <span>${data.year}</span>
+                        </div>` : ''}
+                        <div class="flex items-center bg-green-50 text-green-700 px-2 sm:px-3 py-1 rounded">
+                            <span class="material-icons text-xs sm:text-sm mr-1">video_library</span>
+                            <span>${data.episodes_count} episodes</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-4 sm:mb-6">
+                    <h3 class="text-xs sm:text-sm font-medium text-gray-700 mb-2 sm:mb-3 flex items-center">
+                        <span class="material-icons text-sm sm:text-base mr-2">folder</span>
+                        Current Structure
+                    </h3>
+                    <div class="bg-gray-900 text-gray-300 p-3 sm:p-4 lg:p-6 rounded elevation-1 overflow-x-auto">
+                        <pre class="font-mono text-[10px] sm:text-xs lg:text-sm">${escapeHtml(data.original_tree)}</pre>
+                    </div>
+                </div>
+                
+                <div class="mb-6 sm:mb-8">
+                    <h3 class="text-xs sm:text-sm font-medium text-gray-700 mb-2 sm:mb-3 flex items-center">
+                        <span class="material-icons text-sm sm:text-base mr-2 text-green-600">check_circle</span>
+                        Proposed Structure
+                    </h3>
+                    <div class="bg-gray-900 text-green-400 p-3 sm:p-4 lg:p-6 rounded elevation-1 overflow-x-auto">
+                        <pre class="font-mono text-[10px] sm:text-xs lg:text-sm">${escapeHtml(data.preview_tree)}</pre>
+                    </div>
+                </div>
+                
+                <div class="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                    <button onclick="applyOrganization()" 
+                            class="flex-1 bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white font-medium py-2.5 sm:py-3 px-4 rounded elevation-1 hover:elevation-2 transition flex items-center justify-center text-sm sm:text-base">
+                        <span class="material-icons text-sm sm:text-base mr-2">done</span>
+                        <span>Apply Changes</span>
+                    </button>
+                    <button onclick="closeModal()" 
+                            class="flex-1 bg-white hover:bg-gray-50 text-gray-700 font-medium py-2.5 sm:py-3 px-4 rounded border border-gray-300 transition flex items-center justify-center text-sm sm:text-base">
+                        <span class="material-icons text-sm sm:text-base mr-2">close</span>
+                        <span>Cancel</span>
+                    </button>
+                </div>
+            `;
+        }
+        
+        async function applyOrganization() {
+            const modalBody = document.getElementById('modalBody');
+            
+            modalBody.innerHTML = `
+                <div class="text-center py-12">
+                    <div class="spinner border-4 border-primary-100 border-t-primary-600 rounded-full w-16 h-16 mx-auto mb-6"></div>
+                    <p class="text-gray-600">Organizing files...</p>
+                </div>
+            `;
+            
+            try {
+                const response = await fetch('/apply', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Organization failed');
+                }
+                
+                modalBody.innerHTML = `
+                    <div class="bg-green-50 border-l-4 border-green-500 p-6 mb-6 text-center">
+                        <span class="material-icons text-6xl text-green-600 mb-4">check_circle</span>
+                        <h3 class="text-xl font-medium text-green-800 mb-2">Success!</h3>
+                        <p class="text-sm text-green-700">${data.message}</p>
+                    </div>
+                    <button onclick="window.location.reload()" 
+                            class="w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-3 px-4 rounded elevation-1 transition">
+                        Close & Refresh
+                    </button>
+                `;
+                
+            } catch (error) {
+                modalBody.innerHTML = `
+                    <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
+                        <div class="flex items-center">
+                            <span class="material-icons text-red-500 mr-3">error</span>
+                            <div>
+                                <p class="font-medium text-red-800">Error</p>
+                                <p class="text-sm text-red-700">${error.message}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="closeModal()" 
+                            class="w-full bg-gray-600 hover:bg-gray-700 text-white font-medium py-3 px-4 rounded elevation-1 transition">
+                        Close
+                    </button>
+                `;
+            }
+        }
+        
+        function closeModal() {
+            const modal = document.getElementById('previewModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            
+            // Cancel any pending organization
+            fetch('/cancel', { method: 'POST' });
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Close modal on background click
+        document.getElementById('previewModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>
