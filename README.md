@@ -16,6 +16,8 @@
 
 ## Быстрый старт с Docker
 
+### Docker Run
+
 ```bash
 # Запуск из GitHub Container Registry
 docker run -d \
@@ -24,6 +26,19 @@ docker run -d \
   -v ./tv_unordered:/app/tv_unordered \
   -e DEEPSEEK_API_KEY=your-api-key \
   ghcr.io/verncat/jellyfin-ai-series-organizer:latest
+```
+
+### Docker Compose (рекомендуется)
+
+```bash
+# Создайте .env файл
+echo "DEEPSEEK_API_KEY=your-api-key" > .env
+
+# Запустите из GHCR
+docker-compose -f docker-compose.ghcr.yml up -d
+
+# Или соберите локально
+docker-compose up -d
 ```
 
 Откройте http://localhost:9002

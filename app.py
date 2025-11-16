@@ -4,14 +4,19 @@ Flask Web Interface for TV Series Organizer
 
 import os
 import json
+import logging
+import shutil
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, Response
 from organize_series import (
     get_directory_tree,
     call_deepseek_api,
-    generate_preview_tree,
-    organize_files
+    generate_preview_tree
 )
+
+# Setup logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -32,8 +37,32 @@ def index():
     
     TV.mkdir(exist_ok=True)
     
-    # Get all folders
-    folders = [f.name for f in TV_UNORDERED.iterdir() if f.is_dir()]
+    # Get all folders with file counts
+    folders = []
+    for folder in TV_UNORDERED.iterdir():
+        if folder.is_dir():
+            # Count video files (.mkv, .mp4, .avi)
+            video_files = list(folder.glob('*.mkv')) + list(folder.glob('*.mp4')) + list(folder.glob('*.avi'))
+            
+            # Check if already applied
+            mapping_file = folder / 'file_mappings.json'
+            applied_info = None
+            if mapping_file.exists():
+                try:
+                    mapping_data = json.loads(mapping_file.read_text())
+                    applied_info = {
+                        'applied_at': mapping_data.get('applied_at'),
+                        'destination': mapping_data.get('destination_folder'),
+                        'file_count': len(mapping_data.get('file_mappings', []))
+                    }
+                except Exception as e:
+                    logger.error(f"Error reading mapping file {mapping_file}: {e}")
+            
+            folders.append({
+                'name': folder.name,
+                'file_count': len(video_files),
+                'applied': applied_info
+            })
     
     # Check API key
     api_key = os.getenv("DEEPSEEK_API_KEY", "")
@@ -91,9 +120,9 @@ def analyze():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/apply', methods=['POST'])
+@app.route('/apply', methods=['GET'])
 def apply():
-    """Apply the organization"""
+    """Apply the organization with progress tracking"""
     
     # Get structure from session
     structure = session.get('structure')
@@ -102,21 +131,156 @@ def apply():
     if not structure or not source_folder:
         return jsonify({'error': 'No pending organization'}), 400
     
-    try:
-        # Apply organization
-        organize_files(structure, source_folder, str(TV), dry_run=False)
-        
-        # Clear session
-        session.pop('structure', None)
-        session.pop('source_folder', None)
-        
-        return jsonify({
-            'success': True,
-            'message': 'Organization applied successfully'
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    def generate():
+        """Generator for streaming progress"""
+        try:
+            logger.info("=== Starting apply_organization ===")
+            logger.info(f"Source folder: {source_folder}")
+            logger.info(f"Structure: {json.dumps(structure, indent=2)}")
+            
+            from pathlib import Path
+            import shutil
+            
+            series_name = structure['series_name']
+            year = structure['year']
+            folder_name = f"{series_name} ({year})" if year else series_name
+            
+            series_path = Path(str(TV)) / folder_name
+            logger.info(f"Series path: {series_path}")
+            
+            total_files = 0
+            moved_files = 0
+            
+            # Count total files (episodes + related files)
+            import glob as glob_module
+            logger.info(f"Counting files from {len(structure['episodes'])} episodes...")
+            for ep in structure['episodes']:
+                source_file = Path(source_folder) / ep['original_filename']
+                logger.info(f"Checking: {source_file}")
+                logger.info(f"Exists: {source_file.exists()}")
+                if source_file.exists():
+                    # Count related files
+                    source_stem = source_file.stem
+                    source_parent = source_file.parent
+                    escaped_stem = glob_module.escape(source_stem)
+                    related = list(source_parent.glob(f"{escaped_stem}.*"))
+                    logger.info(f"Related files for {source_stem}: {[f.name for f in related]}")
+                    total_files += len(related)
+            
+            logger.info(f"Total files to move: {total_files}")
+            # Send total count
+            yield f"data: {json.dumps({'type': 'total', 'total': total_files})}\n\n"
+            
+            # Track file mappings for all files
+            all_file_mappings = []
+            
+            # Process files
+            logger.info(f"Starting to process {len(structure['episodes'])} episodes")
+            for ep in structure['episodes']:
+                season_num = ep['season']
+                season_folder = series_path / f"Season {season_num:02d}"
+                
+                # Find source file
+                source_file = Path(source_folder) / ep['original_filename']
+                logger.info(f"Processing episode: {ep['original_filename']}")
+                logger.info(f"Source file path: {source_file}")
+                logger.info(f"Source file exists: {source_file.exists()}")
+                
+                if not source_file.exists():
+                    logger.warning(f"Source file not found, skipping: {source_file}")
+                    continue
+                
+                dest_file = season_folder / ep['new_filename']
+                logger.info(f"Destination: {dest_file}")
+                logger.info(f"Creating season folder: {season_folder}")
+                season_folder.mkdir(parents=True, exist_ok=True)
+                
+                # Collect all related files BEFORE moving anything
+                source_stem = source_file.stem
+                source_parent = source_file.parent
+                dest_stem = dest_file.stem
+                
+                # Escape special glob characters in filename
+                import glob as glob_module
+                escaped_stem = glob_module.escape(source_stem)
+                
+                related_files = list(source_parent.glob(f"{escaped_stem}.*"))
+                logger.info(f"Found {len(related_files)} files to move for {source_stem}")
+                
+                # Move all files (main + related)
+                for file_to_move in related_files:
+                    logger.info(f"Moving file: {file_to_move}")
+                    if file_to_move == source_file:
+                        # Move main video file
+                        logger.info(f"Moving main file: {file_to_move} -> {dest_file}")
+                        
+                        # Record mapping
+                        all_file_mappings.append({
+                            'old_path': str(file_to_move.relative_to(Path.cwd())),
+                            'new_path': str(dest_file.relative_to(Path.cwd())),
+                            'old_name': file_to_move.name,
+                            'new_name': dest_file.name
+                        })
+                        
+                        shutil.move(str(file_to_move), str(dest_file))
+                        moved_files += 1
+                        yield f"data: {json.dumps({'type': 'progress', 'current': moved_files, 'total': total_files, 'filename': ep['new_filename']})}\n\n"
+                    else:
+                        # Move related file (keep same extension)
+                        extension = file_to_move.suffix
+                        related_dest = season_folder / f"{dest_stem}{extension}"
+                        logger.info(f"Moving related file: {file_to_move} -> {related_dest}")
+                        
+                        # Record mapping
+                        all_file_mappings.append({
+                            'old_path': str(file_to_move.relative_to(Path.cwd())),
+                            'new_path': str(related_dest.relative_to(Path.cwd())),
+                            'old_name': file_to_move.name,
+                            'new_name': related_dest.name
+                        })
+                        
+                        shutil.move(str(file_to_move), str(related_dest))
+                        moved_files += 1
+                        yield f"data: {json.dumps({'type': 'progress', 'current': moved_files, 'total': total_files, 'filename': related_dest.name})}\n\n"
+            
+            # Create .applied marker and mapping file in source folder
+            source_folder_path = Path(source_folder)
+            applied_marker = source_folder_path / '.applied'
+            mapping_file = source_folder_path / 'file_mappings.json'
+            
+            # Write .applied marker with timestamp
+            from datetime import datetime
+            applied_marker.write_text(f"Organization applied at {datetime.now().isoformat()}\n")
+            
+            # Write file mappings JSON
+            mapping_data = {
+                'applied_at': datetime.now().isoformat(),
+                'series_name': structure['series_name'],
+                'year': structure['year'],
+                'destination_folder': str(series_path.relative_to(Path.cwd())),
+                'file_mappings': all_file_mappings
+            }
+            mapping_file.write_text(json.dumps(mapping_data, indent=2))
+            logger.info(f"Created {applied_marker} and {mapping_file}")
+            logger.info(f"Saved {len(all_file_mappings)} file mappings")
+            
+            # Send completion
+            logger.info(f"=== Completed: moved {moved_files} files ===")
+            yield f"data: {json.dumps({'type': 'complete', 'message': 'Organization applied successfully', 'total': moved_files})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Error during organization: {e}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    
+    return Response(generate(), mimetype='text/event-stream')
+
+
+@app.route('/apply/complete', methods=['POST'])
+def apply_complete():
+    """Clear session after organization complete"""
+    session.pop('structure', None)
+    session.pop('source_folder', None)
+    return jsonify({'success': True})
 
 
 @app.route('/cancel', methods=['POST'])
@@ -127,6 +291,73 @@ def cancel():
     session.pop('source_folder', None)
     
     return jsonify({'success': True})
+
+
+@app.route('/revert', methods=['POST'])
+def revert():
+    """Revert organization by moving files back to original locations"""
+    try:
+        data = request.json
+        folder_name = data.get('folder')
+        
+        if not folder_name:
+            return jsonify({'error': 'No folder specified'}), 400
+        
+        source_folder = TV_UNORDERED / folder_name
+        mapping_file = source_folder / 'file_mappings.json'
+        
+        if not mapping_file.exists():
+            return jsonify({'error': 'No mapping file found'}), 404
+        
+        # Read mapping
+        mapping_data = json.loads(mapping_file.read_text())
+        file_mappings = mapping_data.get('file_mappings', [])
+        
+        logger.info(f"Reverting {len(file_mappings)} files for folder: {folder_name}")
+        
+        files_reverted = 0
+        errors = []
+        
+        # Move files back
+        for mapping in file_mappings:
+            try:
+                new_path = Path(mapping['new_path'])
+                old_path = Path(mapping['old_path'])
+                
+                if new_path.exists():
+                    # Ensure parent directory exists
+                    old_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Move file back
+                    shutil.move(str(new_path), str(old_path))
+                    files_reverted += 1
+                    logger.info(f"Reverted: {new_path} -> {old_path}")
+                else:
+                    logger.warning(f"File not found for revert: {new_path}")
+                    
+            except Exception as e:
+                error_msg = f"Error reverting {mapping['new_name']}: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+        
+        # Remove .applied marker and mapping file
+        applied_marker = source_folder / '.applied'
+        if applied_marker.exists():
+            applied_marker.unlink()
+        
+        mapping_file.unlink()
+        
+        logger.info(f"Revert completed: {files_reverted} files reverted, {len(errors)} errors")
+        
+        return jsonify({
+            'success': True,
+            'files_reverted': files_reverted,
+            'errors': errors
+        })
+        
+    except Exception as e:
+        logger.error(f"Error during revert: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
